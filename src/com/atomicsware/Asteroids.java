@@ -5,18 +5,23 @@ import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
+import java.awt.Shape;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Area;
 import java.util.ArrayList;
+import java.util.Iterator;
+
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.Timer;
 
 @SuppressWarnings("serial")
 public class Asteroids extends JPanel implements KeyListener, ActionListener {
-	Timer timer;
+	private Timer timer;
 	private double angle = 0;
 	private double angleBullet = 0;
 	private double positionX = 0;
@@ -44,17 +49,36 @@ public class Asteroids extends JPanel implements KeyListener, ActionListener {
 	private float yBullet = -15 - hBullet / 2;
 	private double xAbsBullet;
 	private double yAbsBullet;
-	private int bulletSpeed = 2;
+	private int bulletSpeed = 8;
 	private Polygon t =new Polygon(xPoints, yPoints, 3);
 	private Polygon t2 = new Polygon(xPointsWingR, yPointsWingR, 4);
 	private Polygon t3 = new Polygon(xPointsWingL, yPointsWingL, 4);
 	private Polygon t4 = new Polygon(xPointsThrust, yPointsThrust, 11);	
-	private ArrayList<Bullet> bullets = new ArrayList<Bullet>();	
+	
+	private ArrayList<Bullet> bullets = new ArrayList<Bullet>();
+	private static final int BULLET_LIMIT = 80;
+	private int numBullets = 0;
+	
+	private ArrayList<Rock> rocks = new ArrayList<Rock>();
+	private int[] xPointsRock = {-1, 1, 4, 5, 2, -1, -4, -5};
+	private int[] yPointsRock = {-3, -2, -2, 1, 3, 1, 3, -1};
+	private Rock r1 = new Rock(xPointsRock, yPointsRock, 8, 100, 100, 0.0, 2, 0.349, .002);
+	private Rock r2 = new Rock(xPointsRock, yPointsRock, 8, 150, 200, 0.3, 1, -.7854, -.007);
+	private Rock r3 = new Rock(xPointsRock, yPointsRock, 8, 300, 350, 0.6, 3, .7854, .01);
+	
+	
+	//Rock(int[] xPoints, int[] yPoints, int nPoints, int xPos, int yPos, double angle, int vel)
+	
+	//private double angRock = 0;
+	private double rockSpeed = 2;
 	  
 	public Asteroids(JFrame j) {
 		timer = new Timer(0, this);
 	    timer.start();
 	    j.addKeyListener(this);
+	    rocks.add(r1);
+	    rocks.add(r2);
+	    rocks.add(r3);
 	}
 	
 	public static void main(String[] args) {
@@ -63,7 +87,7 @@ public class Asteroids extends JPanel implements KeyListener, ActionListener {
 	    frame.setSize(1000, 1000);
 	    frame.setLocationRelativeTo(null);
 	    frame.add(new Asteroids(frame));
-	    frame.setVisible(true);	    
+	    frame.setVisible(true);
 	  }
 	
 	/* (non-Javadoc)
@@ -76,36 +100,66 @@ public class Asteroids extends JPanel implements KeyListener, ActionListener {
 		super.paintComponent(g);		
 	    h = getHeight();
 	    w = getWidth();	    
-	    Graphics2D g2d = (Graphics2D) g.create();
-	    BasicStroke s = new BasicStroke((float) 2.0);
-	    g2d.setStroke(s);
-	    //g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-	    //g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_SPEED);
-	    g2d.translate(w / 2 - positionX, h / 2 - positionY);
-	    g2d.rotate(angle);
-	    g2d.setColor(Color.red);
-	    g2d.scale(2, 2);
-	    g2d.draw(t);
-	    g2d.draw(t2);
-	    g2d.draw(t3);
 	    
+	    //draw ship
+	    drawItem(g, 2.0f, Color.RED, 2, w / 2 - positionX, h / 2 - positionY, angle, t, false);
+	    drawItem(g, 2.0f, Color.RED, 2, w / 2 - positionX, h / 2 - positionY, angle, t2, false);
+	    drawItem(g, 2.0f, Color.RED, 2, w / 2 - positionX, h / 2 - positionY, angle, t3, false);
+	    
+	    //draw ship thrust if it is activated
 	    if(thrust) {
-	    	g2d.fill(t4);
+	    	drawItem(g, 2.0f, Color.RED, 2, w / 2 - positionX, h / 2 - positionY, angle, t4, true);
 	    }
 	    
-	    g2d.dispose();
-
-	    if(!bullets.isEmpty()) {
-	    	for (Bullet shot : bullets) {
-	    		Graphics2D g3d = (Graphics2D) g.create();
-	    		g3d.translate(shot.getXtran(), shot.getYtran());
-	    		g3d.rotate(shot.getAngle());
-	    		g3d.setStroke(s);
-	    		g3d.setColor(Color.blue);
-	    		g2d.scale(2, 2);
-	    		g3d.draw(shot);
-	    		g3d.dispose();
-			}
+	    drawRocks(g); //draw the asteroids
+	    drawBullets(g); //draw the bullets if there are any
+	    
+	    Area areaShip = shipArea(); //get the area of the ship
+	    
+	    if(!rocks.isEmpty()) {
+	    	boolean shipRock = false;
+	    	//ArrayList<Rock> removeRocks = new ArrayList<Rock>();
+	    	
+	    	for (Rock rock : rocks) {
+	    		Area areaRock = rockArea(rock);
+	    		shipRock = checkRockShipHit(areaRock, areaShip);
+	    		if(!shipRock) {
+	    			Graphics2D g5d = (Graphics2D) g.create();
+		    		g5d.setColor(Color.PINK);
+		    		g5d.fill(areaRock);
+		    		g5d.fill(areaShip);
+		    		g5d.dispose();
+	    		}
+	    		if(!bullets.isEmpty()) {
+	    			for (Bullet shot : bullets) {
+	    				boolean b = areaRock.contains(shot.getXtran(), shot.getYtran());
+	    				if(b) {
+	    					rock.setUnhit(false);
+	    					shot.setUnhit(false);
+//	    	    			Graphics2D g5d = (Graphics2D) g.create();
+//	    		    		g5d.setColor(Color.PINK);
+//	    		    		g5d.fill(areaRock);
+//	    		    		g5d.dispose();
+	    	    		}	    				
+	    			}
+	    		}	    		
+	    	}
+	    	//Remove rocks that have been hit
+	    	for (Iterator<Rock> iterator = rocks.iterator(); iterator.hasNext();) {
+	    	    Rock rock = iterator.next();
+	    	    if (!rock.isUnhit()) {
+	    	        iterator.remove();
+	    	    }
+	    	}
+	    	
+	    	//Remove bullets that have hit rocks
+	    	for (Iterator<Bullet> iterator = bullets.iterator(); iterator.hasNext();) {
+	    	    Bullet bullet = iterator.next();
+	    	    if (!bullet.isUnhit()) {
+	    	        iterator.remove();
+	    	    }
+	    	}
+	    	
 	    }
 	}
 	
@@ -116,7 +170,9 @@ public class Asteroids extends JPanel implements KeyListener, ActionListener {
 		wrapShip();
 		checkThrust();
 		checkRotation();
-		checkBullets();		
+		checkBullets();
+		checkRocks();
+		//angRock = angRock + .002;
 	    repaint();
 	}
 
@@ -133,8 +189,13 @@ public class Asteroids extends JPanel implements KeyListener, ActionListener {
 			xAbsBullet = w / 2 - positionX;
 			yAbsBullet = h / 2 - positionY;	
 			angleBullet = angle;
-			bullets.add(new Bullet(xBullet, yBullet, wBullet, hBullet, angleBullet, 1500, xAbsBullet, yAbsBullet));			
+			fire = true;
+			if(numBullets < BULLET_LIMIT) {
+				bullets.add(new Bullet(xBullet, yBullet, wBullet, hBullet, angleBullet, 1500, xAbsBullet, yAbsBullet, Color.BLUE));
+				numBullets = numBullets + 1;
+			}			
 		}
+		
 		if(i == 37) {
 			ccw = true;
 			cw = false;
@@ -153,6 +214,10 @@ public class Asteroids extends JPanel implements KeyListener, ActionListener {
 	public void keyReleased(KeyEvent e) {
 		//char c = e.getKeyChar();
 		int i = e.getKeyCode();
+		
+		if(i == 32) {
+			fire = false;
+		}
 		
 		if(i == 38) {
 			thrust = false;
@@ -219,6 +284,7 @@ public class Asteroids extends JPanel implements KeyListener, ActionListener {
 		if(!bullets.isEmpty()) {
 			if (bullets.get(0).getTime() <= 0) {
 				bullets.remove(0);
+				numBullets = numBullets - 1;
 			}
 		}
 		
@@ -245,4 +311,101 @@ public class Asteroids extends JPanel implements KeyListener, ActionListener {
 			}
 		}
 	}
+	
+	private void checkRocks() {		
+		if(!rocks.isEmpty()) {			
+			for (Rock rock : rocks) {
+				double xAbsR = rock.getxPos();
+				if(xAbsR <= 0) {
+					rock.setxPos(w + rockSpeed * Math.sin(rock.getAngPath()));
+				}
+				else if(xAbsR >= w) {
+					rock.setxPos(rockSpeed * Math.sin(rock.getAngPath()));
+				}
+				
+				double yAbsB = rock.getyPos();
+				if(yAbsB <= 0) {
+					rock.setyPos(h - rockSpeed * Math.cos(rock.getAngPath()));
+				}
+				else if(yAbsB >= h) {
+					rock.setyPos(-rockSpeed * Math.cos(rock.getAngPath()));
+				}				
+				rock.setxPos(rock.getxPos() + rockSpeed * Math.sin(rock.getAngPath()));
+				
+				//System.out.println(rock.getxPos());
+				rock.setyPos(rock.getyPos() - rockSpeed * Math.cos(rock.getAngPath()));
+			}
+		}
+	}
+	
+	private void drawRocks(Graphics g) {
+		if(!rocks.isEmpty()) {
+	    	for (Rock rock : rocks) {
+	    		rock.setAngle(rock.getAngle() + rock.getAngRate());
+	    		drawItem(g, 0.2f, Color.GREEN, 25, rock.getxPos(), rock.getyPos(), rock.getAngle(), rock, false);	    		
+	    	}
+	    }
+	}
+	
+	private void drawItem(Graphics g, float stroke, Color c, int scale, double x, double y, double angle, Shape s, boolean fill) {
+		BasicStroke str = new BasicStroke(stroke);
+		Graphics2D gd = (Graphics2D) g.create();
+		gd.translate(x, y);
+		gd.rotate(angle);
+		gd.setStroke(str);
+		gd.setColor(c);
+		gd.scale(scale, scale);
+		if(fill) {
+			gd.fill(s);
+		}
+		else {
+			gd.draw(s);
+		}
+		gd.dispose();
+	}
+	
+	private boolean checkRockShipHit(Area areaRock, Area ship) {
+		Area areaIntersect = (Area)ship.clone();
+		areaIntersect.intersect(areaRock);
+		boolean shipRock = areaIntersect.isEmpty();
+		return shipRock;		
+	}
+	
+	private Area rockArea(Rock rock) {
+		Area areaRock = new Area(rock);
+		AffineTransform atArea = new AffineTransform();
+		atArea.translate((int)rock.getxPos(), (int)rock.getyPos());
+		atArea.rotate(rock.getAngle());
+		atArea.scale(25, 25);
+		areaRock.transform(atArea);
+		return areaRock;
+	}
+	
+	private void drawBullets(Graphics g) {
+		if(!bullets.isEmpty()) {
+	    	for (Bullet shot : bullets) {	    		
+	    		drawItem(g, 2.0f, shot.getC(), 2, shot.getXtran(), shot.getYtran(), shot.getAngle(), shot, false);	    		
+	    	}
+	    }
+	}
+	
+	private Area shipArea() {
+		Area areaShip = new Area(t);
+    	Area areaWingR = new Area(t2);
+    	Area areaWingL = new Area(t3);
+    	areaShip.add(areaWingR);
+    	areaShip.add(areaWingL);
+    	AffineTransform shipArea = new AffineTransform();
+    	shipArea.translate(w / 2 - positionX, h / 2 - positionY);
+    	shipArea.rotate(angle);
+    	shipArea.scale(2, 2);
+    	areaShip.transform(shipArea);
+    	return areaShip;
+	}
+	
+	
+	
+	
+	
+	
 }
